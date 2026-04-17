@@ -33,7 +33,7 @@ Malicious Detective XAI is a live, web-based multi-class URL classifier that dis
 ## 🧠 How It Works
 
 1. **Feature Engineering:** Extracts 15+ syntactic features from the URL (length, dots, hyphens, special characters, HTTPS presence, subdomain count, etc.).
-2. **Classification:** A **LightGBM** model (trained on 30k+ URLs) predicts the class and confidence scores.
+2. **Classification:** A **LightGBM** model (trained on 250k+ URLs) predicts the class and confidence scores.
 3. **Explanation (XAI):** **LIME** perturbs the input features and observes how predictions change, generating an intuitive HTML report that highlights feature contributions.
 
 ---
