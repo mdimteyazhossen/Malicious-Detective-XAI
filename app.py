@@ -132,7 +132,7 @@ def get_explainer():
     return LimeTabularExplainer(
         training_data=xtrain,
         feature_names=feature_names,
-        class_names=le.classes_,
+        class_names=model.classes_,
         mode='classification'
     )
 
@@ -161,11 +161,10 @@ if analyze_btn:
             else:
                 feat_df = pd.DataFrame([feats])
                 feat_df = feat_df[feature_names]
-                
-                pred_encoded = model.predict(feat_df)[0]
                 proba = model.predict_proba(feat_df)[0]
-                pred_class = le.classes_[pred_encoded]
-                confidence = proba[pred_encoded] * 100
+                pred_index = np.argmax(proba)
+                pred_class = model.classes_[pred_index] 
+                confidence = proba[pred_index]*100
                 
                 if pred_class == "Phishing":
                     st.markdown("""
@@ -192,7 +191,7 @@ if analyze_btn:
                 st.write(f"**Confidence:** {confidence:.2f}%")
                 st.markdown("---")
                 st.markdown("**📊 Class Probabilities:**")
-                for i, cls in enumerate(le.classes_):
+                for i, cls in enumerate(model.classes_):
                     st.write(f"{cls}: {proba[i]*100:.2f}%")
                 
                 st.markdown("---")
