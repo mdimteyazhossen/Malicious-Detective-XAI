@@ -140,7 +140,7 @@ def get_explainer():
     return LimeTabularExplainer(
         training_data=xtrain,
         feature_names=feature_names,
-        class_names=model.classes_,
+        class_names=classnamnes,
         mode='classification'
     )
 
@@ -174,14 +174,14 @@ if analyze_btn:
                 pred_class = classMapping[pred_index] 
                 confidence = proba[pred_index]*100
                 
-                if pred_class == "Phishing":
+                if pred_class == "phishing":
                     st.markdown("""
                     <div class="result-box phishing-box">
                         <h2 style="color: #DC2626; margin-bottom: 8px;">🎣 PHISHING DETECTED</h2>
                         <p style="font-size: 1rem; color: #7F1D1D;">This URL is attempting to steal credentials.</p>
                     </div>
                     """, unsafe_allow_html=True)
-                elif pred_class == "Malware":
+                elif pred_class == "malware":
                     st.markdown("""
                     <div class="result-box malware-box">
                         <h2 style="color: #EAB308; margin-bottom: 8px;">⚠️ MALWARE DETECTED</h2>
@@ -199,7 +199,7 @@ if analyze_btn:
                 st.write(f"**Confidence:** {confidence:.2f}%")
                 st.markdown("---")
                 st.markdown("**📊 Class Probabilities:**")
-                for i, cls in enumerate(model.classes_):
+                for i, cls in enumerate(classnamnes):
                     st.write(f"{cls}: {proba[i]*100:.2f}%")
                 
                 st.markdown("---")
