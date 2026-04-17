@@ -164,7 +164,7 @@ if analyze_btn:
                 
                 pred_encoded = model.predict(feat_df)[0]
                 proba = model.predict_proba(feat_df)[0]
-                pred_class = le.inverse_transform([pred_encoded])[0]
+                pred_class = le.classes_[pred_encoded]
                 confidence = proba[pred_encoded] * 100
                 
                 if pred_class == "Phishing":
