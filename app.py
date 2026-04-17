@@ -126,6 +126,14 @@ def load_assets():
     return model, le, feature_names, xtrain
 
 model, le, feature_names, xtrain = load_assets()
+classMapping = {
+    0: "benign",
+    1: "defacement",
+    2: "malware",
+    3: "phishing"
+}
+
+classnamnes = list(classMapping.values())
 
 @st.cache_resource
 def get_explainer():
@@ -163,7 +171,7 @@ if analyze_btn:
                 feat_df = feat_df[feature_names]
                 proba = model.predict_proba(feat_df)[0]
                 pred_index = np.argmax(proba)
-                pred_class = model.classes_[pred_index] 
+                pred_class = classMapping[pred_index] 
                 confidence = proba[pred_index]*100
                 
                 if pred_class == "Phishing":
