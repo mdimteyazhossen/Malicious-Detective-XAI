@@ -1,15 +1,18 @@
 import streamlit as st
 import pickle
-from lime.lime_text import LimeTextExplainer
+import re
+import pandas as pd
+import numpy as np
+from urllib.parse import urlparse
+from lime.lime_tabular import LimeTabularExplainer
 import streamlit.components.v1 as components
 
-#PAGE CONFIGURATION
 st.set_page_config(
-    page_title="SpamShield XAI",
-    page_icon="🛡️",
+    page_title="Malicious Detective XAI",
+    page_icon="🔍",
     layout="centered",
-    initial_sidebar_state="collapsed"
 )
+
 st.markdown("""
 <style>
     iframe {
@@ -21,189 +24,192 @@ st.markdown("""
         background-color: white !important;
         border-radius: 12px !important;
     }
-
     @media screen and (max-width: 600px) {
-        .main-header {
-            font-size: 2rem !important;
-        }
-        .sub-header {
-            font-size: 0.9rem !important;
-        }
-        .stButton button {
-            font-size: 16px !important;
-            padding: 10px 0 !important;
-        }
+        .main-header { font-size: 2rem !important; }
+        .sub-header { font-size: 0.9rem !important; }
+        .stButton button { font-size: 16px !important; padding: 10px 0 !important; }
     }
 </style>
 """, unsafe_allow_html=True)
-#CUSTOM CSS FOR AESTHETICS
+
 st.markdown("""
 <style>
     .main-header {
-        text-align: center;
-        padding: 1rem 0;
-        background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 2.8rem;
-        font-weight: 800;
-        margin-bottom: 0;
+        text-align: center; padding: 1rem 0;
+        background: linear-gradient(90deg, #DC2626 0%, #EA580C 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-size: 2.8rem; font-weight: 800; margin-bottom: 0;
     }
     .sub-header {
-        text-align: center;
-        color: #64748B;
-        font-size: 1.1rem;
-        margin-top: -10px;
-        margin-bottom: 30px;
+        text-align: center; color: #94A3B8; font-size: 1.1rem;
+        margin-top: -10px; margin-bottom: 30px;
     }
-    .stTextArea textarea {
-        border-radius: 12px;
-        border: 2px solid #E2E8F0;
-        font-size: 16px;
-        padding: 15px;
-    }
-    .stTextArea textarea:focus {
-        border-color: #3B82F6;
-        box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
+    .stTextInput > div > div > input {
+        border-radius: 12px; border: 2px solid #334155;
+        font-size: 16px; padding: 15px;
+        background-color: #1E293B; color: white;
     }
     .stButton button {
-        width: 100%;
-        border-radius: 40px;
-        background: linear-gradient(90deg, #1E3A8A 0%, #2563EB 100%);
-        color: white;
-        font-weight: 600;
-        font-size: 18px;
-        padding: 12px 0;
-        border: none;
-        transition: all 0.3s ease;
+        width: 100%; border-radius: 40px;
+        background: linear-gradient(90deg, #DC2626 0%, #EA580C 100%);
+        color: white; font-weight: 600; font-size: 18px;
+        padding: 12px 0; border: none; transition: all 0.3s ease;
     }
     .stButton button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 16px rgba(30,58,138,0.3);
+        box-shadow: 0 8px 16px rgba(220, 38, 38, 0.3);
     }
     .result-box {
-        border-radius: 16px;
-        padding: 20px;
-        margin-top: 20px;
-        text-align: center;
+        border-radius: 16px; padding: 20px; margin-top: 20px; text-align: center;
     }
-    .spam-box {
-        background-color: #FEF2F2;
-        border-left: 6px solid #DC2626;
+    .phishing-box {
+        background-color: #FEF2F2; border-left: 6px solid #DC2626;
     }
-    .ham-box {
-        background-color: #F0FDF4;
-        border-left: 6px solid #16A34A;
+    .malware-box {
+        background-color: #FEFCE8; border-left: 6px solid #EAB308;
+    }
+    .benign-box {
+        background-color: #F0FDF4; border-left: 6px solid #16A34A;
     }
     .footer {
-        text-align: center;
-        margin-top: 40px;
-        color: #94A3B8;
-        font-size: 0.9rem;
+        text-align: center; margin-top: 40px; color: #94A3B8; font-size: 0.9rem;
     }
-    .metric-card {
-        background: #F8FAFC;
-        border-radius: 12px;
-        padding: 10px 20px;
-        margin: 10px 0;
-    }
+    .footer a { color: #64748B; text-decoration: none; }
+    .footer a:hover { color: #DC2626; }
 </style>
 """, unsafe_allow_html=True)
 
-#LOAD MODEL & VECTORIZER
+def extract_url_features(url):
+    if not url:
+        return None
+    url = str(url).strip().lower()
+    features = {}
+    try:
+        parsed = urlparse(url)
+    except:
+        return None
+    hostname = parsed.netloc
+
+    features['urlLength'] = len(url)
+    features['hostLength'] = len(hostname)
+    features['pathLength'] = len(parsed.path)
+    features['count_dot'] = url.count('.')
+    features['count-'] = url.count('-')
+    features['count@'] = url.count('@')
+    features['count?'] = url.count('?')
+    features['count='] = url.count('=')
+    features['count_digit'] = sum(c.isdigit() for c in url)
+    features['has_https'] = 1 if parsed.scheme == 'https' else 0
+    
+    suspectionword = ['secure', 'account', 'confirm', 'login', 'signin', 'banking', 'verify', 'webscr']
+    features['has_sus'] = 1 if any(word in url for word in suspectionword) else 0
+
+    ipaddress = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+    features['has_ipaddress'] = 1 if re.search(ipaddress, url) else 0
+
+    if hostname:
+        features['count_subdomain'] = len(hostname.split('.')) - 2
+    else:
+        features['count_subdomain'] = 0
+
+    return features
+
 @st.cache_resource
 def load_assets():
-    with open('spam_model.pkl', 'rb') as f:
+    with open('urlModelLgb.pkl', 'rb') as f:
         model = pickle.load(f)
-    with open('vectorizer.pkl', 'rb') as f:
-        vectorizer = pickle.load(f)
-    return model, vectorizer
+    with open('labelEncoder.pkl', 'rb') as f:
+        le = pickle.load(f)
+    with open('featuresNames.pkl', 'rb') as f:
+        feature_names = pickle.load(f)
+    xtrain = np.load('xtrain.npy')
+    return model, le, feature_names, xtrain
 
-model, vectorizer = load_assets()
+model, le, feature_names, xtrain = load_assets()
 
-#lime explainer
 @st.cache_resource
 def get_explainer():
-    return LimeTextExplainer(class_names=['Ham (safe)','Spam'])
+    return LimeTabularExplainer(
+        training_data=xtrain,
+        feature_names=feature_names,
+        class_names=le.classes_,
+        mode='classification'
+    )
 
 explainer = get_explainer()
 
-#UI HEADER
-st.markdown('<div class="main-header">🛡️ SpamShield XAI</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">>AI-powered email threat detection · Built with Naive Bayes & Explainable AI (LIME)</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🔍 Malicious Detective XAI</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Explainable AI for Phishing & Malware URL Detection</div>', unsafe_allow_html=True)
 
-#INPUT SECTION
-st.markdown("### 📧 Paste Email Content")
-user_input = st.text_area(
-    label="Email body text",
-    placeholder="e.g. \"Congratulations! You've won a free iPhone. Click here to claim your prize...\"",
-    height=180,
+st.markdown("### 🔗 Enter URL to Analyze")
+user_input = st.text_input(
+    label="URL input",
+    placeholder="https://example.com or http://suspicious-link.xyz",
     label_visibility="collapsed"
 )
 
-#ACTION BUTTON
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    analyze_btn = st.button("🔍 Analyze Email", use_container_width=True)
+    analyze_btn = st.button("🔎 Analyze URL", use_container_width=True)
 
-#RESULT DISPLAY
 if analyze_btn:
     if user_input.strip():
-        with st.spinner("Scanning for threats..."):
-            transformed = vectorizer.transform([user_input])
-            prediction = model.predict(transformed)[0]
-            proba = model.predict_proba(transformed)[0]
-
-        spam_prob = proba[1] * 100
-        ham_prob = proba[0] * 100
-
-        if prediction == 1:
-            st.markdown("""
-            <div class="result-box spam-box">
-                <h2 style="color: #DC2626; margin-bottom: 10px;">🚨 SPAM DETECTED</h2>
-                <p style="font-size: 1.1rem; color: #7F1D1D;">This email appears to be unsolicited or malicious.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="result-box ham-box">
-                <h2 style="color: #16A34A; margin-bottom: 10px;">✅ SAFE (HAM)</h2>
-                <p style="font-size: 1.1rem; color: #14532D;">This email looks legitimate.</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("🔴 Spam Probability", f"{spam_prob:.2f}%")
-        with col2:
-            st.metric("🟢 Ham Probability", f"{ham_prob:.2f}%")
-
-        with st.expander("📊 Model Insight"):
-            st.write(f"- **Classifier:** Multinomial Naive Bayes")
-            st.write(f"- **Vectorizer:** CountVectorizer (bag-of-words)")
-            st.write(f"- **Confidence Threshold:** 50%")
-            st.caption("The model analyzes word frequencies and patterns associated with spam emails.")
-        #lime explanation
-        def predict_proba(texts):
-            transformed = vectorizer.transform(texts)
-            return model.predict_proba(transformed)
-        with st.spinner("🔍 Explaining the prediction..."):
-            exp = explainer.explain_instance(user_input, predict_proba, num_features=10)
-        st.subheader("🔍 Why this prediction?")
-        components.html(exp.as_html(),height=400, scrolling=True)
-        st.caption("🟢 Green words = Ham (Safe) | 🔴 Red words = Spam")
+        with st.spinner("🔎 Analyzing URL..."):
+            feats = extract_url_features(user_input)
+            if feats is None:
+                st.error("❌ Invalid URL format.")
+            else:
+                feat_df = pd.DataFrame([feats])
+                feat_df = feat_df[feature_names]
+                
+                pred_encoded = model.predict(feat_df)[0]
+                proba = model.predict_proba(feat_df)[0]
+                pred_class = le.inverse_transform([pred_encoded])[0]
+                confidence = proba[pred_encoded] * 100
+                
+                if pred_class == "Phishing":
+                    st.markdown("""
+                    <div class="result-box phishing-box">
+                        <h2 style="color: #DC2626; margin-bottom: 8px;">🎣 PHISHING DETECTED</h2>
+                        <p style="font-size: 1rem; color: #7F1D1D;">This URL is attempting to steal credentials.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                elif pred_class == "Malware":
+                    st.markdown("""
+                    <div class="result-box malware-box">
+                        <h2 style="color: #EAB308; margin-bottom: 8px;">⚠️ MALWARE DETECTED</h2>
+                        <p style="font-size: 1rem; color: #854D0E;">This URL hosts or distributes malicious software.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="result-box benign-box">
+                        <h2 style="color: #16A34A; margin-bottom: 8px;">✅ SAFE (BENIGN)</h2>
+                        <p style="font-size: 1rem; color: #14532D;">This URL appears to be legitimate.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.write(f"**Confidence:** {confidence:.2f}%")
+                st.markdown("---")
+                st.markdown("**📊 Class Probabilities:**")
+                for i, cls in enumerate(le.classes_):
+                    st.write(f"{cls}: {proba[i]*100:.2f}%")
+                
+                st.markdown("---")
+                with st.spinner("🔬 Generating explanation with LIME..."):
+                    exp = explainer.explain_instance(feat_df.values[0], model.predict_proba, num_features=10)
+                st.subheader("🔬 Why this prediction?")
+                components.html(exp.as_html(), height=400, scrolling=True)
+                st.caption("🟢 Green = Supports Benign | 🔴 Red = Supports Phishing | 🟡 Yellow = Supports Malware")
     else:
-        st.warning("⚠️ Please paste some email content to analyze.")
+        st.warning("⚠️ Please enter a URL.")
 
-#FOOTER
 st.markdown("---")
 st.markdown(
     '<div class="footer">Built by Md Imteyaz Hossen · '
     'Cyber + AI Portfolio · '
     '<a href="https://github.com/mdimteyazhossen" target="_blank">GitHub</a> · '
-    '<a href="https://www.kaggle.com/mdimteyazhossen" target="_blank">Kaggle</a></div>',
+    '<a href="https://www.kaggle.com/mdimteyazhossen" target="_blank">Kaggle</a> · '
+    '<a href="https://www.linkedin.com/in/mdimteyazhossen/" target="_blank">LinkedIn</a></div>',
     unsafe_allow_html=True
 )
-
-
-
